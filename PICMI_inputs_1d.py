@@ -26,7 +26,7 @@ else:
 
 diag_name += f"_{prefix}_{n0}_{particles_per_cell}_{num_cells}"
 
-subcycling_interval = 11
+supercycling_interval = 11
 
 print(diag_name)
 ####################################################################
@@ -182,7 +182,7 @@ sim.add_species(electrons, layout = particle_layout)
 
 ions = picmi.Species(
     particle_type = species, name = 'ions', mass = m_i, charge = 'q_e',
-    warpx_do_subcycling = True, warpx_subcycling_interval = subcycling_interval
+    warpx_do_supercycling = True, warpx_supercycling_interval = supercycling_interval
 )
 sim.add_species(ions, layout = particle_layout)
 
