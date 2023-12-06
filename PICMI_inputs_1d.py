@@ -1,9 +1,38 @@
 import argparse
 import sys
 
+####################################################################
+#                     COMMAND LINE ARGUMENTS                       #                  
+####################################################################
+
+parser = argparse.ArgumentParser()
+parser.add_argument('n0', type = float, nargs = "?", default = 1e17)
+parser.add_argument('ppc', type = int, nargs = "?", default = 200)
+parser.add_argument('N', type = int, nargs = "?", default = 200)
+parser.add_argument('prefix', type = str, nargs = "?", default = "")
+
+args = parser.parse_args()
+n0 = args.n0
+particles_per_cell = args.ppc
+num_cells = args.N
+prefix = args.prefix
+
+quiet_start = False  # Whether to use low-discrepancy sampling to load particles
+
+if (quiet_start):
+    diag_name = "quiet"
+else:
+    diag_name = "noisy"
+
+diag_name += f"_{prefix}_{n0}_{particles_per_cell}_{num_cells}"
+
+print(diag_name)
+####################################################################
+#                            IMPORTS                               #                  
+####################################################################
+
 import numpy as np
 import cupy as cp
-from cupyx import jit
 from math import sqrt, ceil, floor
 
 from pywarpx import callbacks, fields, libwarpx, particle_containers, picmi
@@ -12,13 +41,8 @@ from periodictable import elements
 from scipy import stats
 from scipy.stats import qmc
 
-#from numba import jit, njit, vectorize, guvectorize
-
-from numba import cuda, vectorize
 
 import time
-
-print("imports done")
 
 m_p = picmi.constants.m_p
 m_e = picmi.constants.m_e
@@ -33,26 +57,23 @@ verbose = False            # Whether to use verbose output
 num_grids = 1              # Number of subgrids to decompose domain into
 debye_factor = 1.5            # Grid cells per debye length
 dt_factor = 3.0             # Timestep factor. dt = dt_factor * dx / v_ExB
-particles_per_cell = 100    # Number of particles per cell
-num_cells = 100
+#particles_per_cell = 200    # Number of particles per cell
+#dt = 2e-12
 dt = 5e-12
 seed = 11235813             # Random seed
 
-L = 5e-3         # Simulation domain length (m)
+#L = 26.7e-3         # Simulation domain length (m)
+L = 5e-3
 L_axial = 1e-2     # Virtual axial length
 max_time = 2e-6    # Max time (s)
-num_diags = 200    # Number of diagnostic outputs
-n0 = 1.0e17           # Plasma density
-B0 = 2.0e-2           # Magnetic field strength (T)
-E0 = 20.0e3           # Electric field strength (V/m)
+num_diags = 100     # Number of diagnostic outputs
+#n0 = 1e17           # Plasma density
+B0 = 2e-2           # Magnetic field strength (T)
+E0 = 20e3           # Electric field strength (V/m)
 species = "Xe"      # Ion species
 T_e = 2.0          # Electron temperature (eV)
 T_i = 0.1           # Ion temperature (eV)
 u_i = 0.0         # Axial ion velocity (m/s)
-
-diag_name = "no_subcycle_base"  # Diagnostic output folder
-
-quiet_start = True  # Whether to use low-discrepancy sampling to load particles
 
 ####################################################################
 #                        DERIVED VALUES                            #                  
@@ -88,11 +109,7 @@ grid = picmi.Cartesian1DGrid(
     lower_boundary_conditions = ['periodic'],
     upper_boundary_conditions = ['periodic'],
     lower_boundary_conditions_particles = ['periodic'],
-    upper_boundary_conditions_particles = ['periodic'],
-    # warpx_virtual_x_dim = True,
-    # warpx_virtual_y_dim = False,
-    # warpx_virtual_x_len = L_axial,
-    # warpx_virtual_y_len = L_axial * 2
+    upper_boundary_conditions_particles = ['periodic']
 )
 
 # Field solver
@@ -108,7 +125,7 @@ sim = picmi.Simulation(
     warpx_field_gathering_algo = 'energy-conserving',
     warpx_serialize_initial_conditions = True,
     warpx_random_seed = seed,
-    warpx_sort_intervals = 1000
+    warpx_sort_intervals = 500
 )
 solver.sim = sim
 
@@ -157,12 +174,12 @@ else:
 weight = L * n0 / num_particles * np.ones(num_particles)
 
 electrons = picmi.Species(
-    particle_type = 'electron', name = 'electrons'
+    particle_type = 'electron', name = 'electrons',
 )
 sim.add_species(electrons, layout = particle_layout)
 
 ions = picmi.Species(
-    particle_type = species, name = 'ions', mass = m_i, charge = 'q_e'
+    particle_type = species, name = 'ions', mass = m_i, charge = 'q_e',
 )
 sim.add_species(ions, layout = particle_layout)
 
@@ -251,7 +268,7 @@ def _adjust_velocity(wrapper, bulk_u, v_rms, L_axial, dt):
     threads_per_block = 512
 
     # Iterate over grids
-    for (x, ux, uy, uz) in zip(xs, uxs, uys, uzs):        
+    for (i, (x, ux, uy, uz)) in enumerate(zip(xs, uxs, uys, uzs)):        
         # Get number of particles
         N = x.size
 
@@ -262,7 +279,7 @@ def _adjust_velocity(wrapper, bulk_u, v_rms, L_axial, dt):
         k_wrap_particles_double((num_blocks, ), (threads_per_block, ), (
             N, x, ux, uy, uz, bulk_u, v_rms, rands[:, 0], rands[:, 1], rands[:, 2], L_axial, dt)
         )
-    
+
 def adjust_velocity():
     #t = time.time()
     _adjust_velocity(elec_wrapper, bulk_u_e, ve_rms, L_axial, dt)
@@ -277,6 +294,3 @@ callbacks.installbeforestep(adjust_velocity)
 #                        RUN SIMULATION                            #                  
 ####################################################################
 sim.step(max_steps)
-
-            
-        

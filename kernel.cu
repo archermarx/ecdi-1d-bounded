@@ -1,3 +1,8 @@
+template <typename T> __device__
+inline T fwrap(const T x, const T len) {
+    return x - len * floor(x / len);
+}
+
 template <typename T> __global__
 void _wrap_particles(
     const int N,
@@ -10,13 +15,12 @@ void _wrap_particles(
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < N) {
-        x[i] = x[i] + ux[i] * dt;
-
-        if (x[i] >= L_axial || x < 0) {
-            x[i] = fmod(x[i], L_axial);
-            ux[i] = v_rms * rand_vx[i] + bulk_u[0];
-            uy[i] = v_rms * rand_vy[i] + bulk_u[1];
-            uz[i] = v_rms * rand_vz[i] + bulk_u[2];
+        x[i] = fma(ux[i], dt, x[i]);
+        if (x[i] >= L_axial || x[i] < 0) {
+            x[i] = fwrap<T>(x[i], L_axial);
+            ux[i] = fma(v_rms, rand_vx[i], bulk_u[0]);
+            uy[i] = fma(v_rms, rand_vy[i], bulk_u[1]);
+            uz[i] = fma(v_rms, rand_vz[i], bulk_u[2]);
         }
     }
 }
