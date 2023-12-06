@@ -26,6 +26,8 @@ else:
 
 diag_name += f"_{prefix}_{n0}_{particles_per_cell}_{num_cells}"
 
+subcycling_interval = 11
+
 print(diag_name)
 ####################################################################
 #                            IMPORTS                               #                  
@@ -57,7 +59,7 @@ verbose = False            # Whether to use verbose output
 num_grids = 1              # Number of subgrids to decompose domain into
 debye_factor = 1.5            # Grid cells per debye length
 dt_factor = 3.0             # Timestep factor. dt = dt_factor * dx / v_ExB
-#particles_per_cell = 200    # Number of particles per cell
+particles_per_cell = 200    # Number of particles per cell
 #dt = 2e-12
 dt = 5e-12
 seed = 11235813             # Random seed
@@ -180,6 +182,7 @@ sim.add_species(electrons, layout = particle_layout)
 
 ions = picmi.Species(
     particle_type = species, name = 'ions', mass = m_i, charge = 'q_e',
+    warpx_do_subcycling = true, warpx_subcycling_interval = subcycling_iterval
 )
 sim.add_species(ions, layout = particle_layout)
 
