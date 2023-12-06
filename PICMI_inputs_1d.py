@@ -182,7 +182,7 @@ sim.add_species(electrons, layout = particle_layout)
 
 ions = picmi.Species(
     particle_type = species, name = 'ions', mass = m_i, charge = 'q_e',
-    warpx_do_subcycling = true, warpx_subcycling_interval = subcycling_iterval
+    warpx_do_subcycling = True, warpx_subcycling_interval = subcycling_interval
 )
 sim.add_species(ions, layout = particle_layout)
 
