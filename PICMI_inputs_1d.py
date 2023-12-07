@@ -75,12 +75,12 @@ E0 = 20e3           # Electric field strength (V/m)
 species = "Xe"      # Ion species
 T_e = 2.0          # Electron temperature (eV)
 T_i = 0.1           # Ion temperature (eV)
-u_i = 0.0         # Axial ion velocity (m/s)
+u_i = 3000.0         # Axial ion velocity (m/s)
+u_e = -u_i
 
 ####################################################################
 #                        DERIVED VALUES                            #
 ####################################################################
-
 m_i = elements.symbol(species).mass * m_p       # Ion mass
 v_ExB = E0 / B0                                 # E x B drift speed
 ve_rms = sqrt(q_e * T_e / m_e)                  # Electron rms speed
@@ -151,7 +151,7 @@ z = np.linspace(0, L, num_particles+2)[1:-1]
 
 # Bulk velocities
 bulk_u_i = cp.array([u_i, 0.0, 0.0])
-bulk_u_e = cp.array([0.0, 0.0, v_ExB])
+bulk_u_e = cp.array([u_e, 0.0, v_ExB])
 
 # Distribution parameters
 cp.random.seed(seed)
@@ -211,6 +211,29 @@ sim.initialize_inputs()
 ####################################################################
 #                           CALLBACKS                              #
 ####################################################################
+ion_flux = u_i
+ion_velocity_func = lambda x: np.sqrt(u_i**2 + 2 * q_e / m_i * E0 * x)
+ion_density_func = lambda x: ion_flux / ion_velocity_func(x)
+
+electron_velocity_func = lambda x: np.sqrt(u_i**2 + 2 * q_e / m_i * E0 * (L_axial - x))
+electron_density_func = lambda x: ion_flux / electron_velocity_func(x)
+
+def sample_density_func(f, N):
+
+    samples = np.zeros(N)
+
+    for i in range(N):
+        sample_found = False
+        while (not sample_found):
+            trial_samples = np.random.uniform(0, 1, size = 2)
+            s0 = trial_samples[0] * L_axial
+            s1 = trial_samples[1]
+            pdf = f(s0)
+            if (s1 < pdf):
+                sample_found = True
+                samples[i] = s0
+
+    return samples
 
 def initialize_particles():
 
@@ -221,19 +244,22 @@ def initialize_particles():
     ion_wrapper.add_real_comp('x_pos')
 
     # Particles start randomly-distributed in x
-    initial_pos = np.random.uniform(0.0, L_axial, size = num_particles)
+    initial_pos_e = sample_density_func(electron_density_func, num_particles)
+    initial_pos_i = sample_density_func(ion_density_func, num_particles)
+
+    ue_x = electron_velocity_func(initial_pos_e)
 
     elec_wrapper.add_particles(
         x = x, y = y, z = z,
-        ux = ue[:, 0] + bulk_u_e[0].get(),
+        ux = ue_x,
         uy = ue[:, 1] + bulk_u_e[1].get(),
         uz = ue[:, 2] + bulk_u_e[2].get(),
         w = weight,
-        x_pos = initial_pos,
+        x_pos = initial_pos_e,
         unique_particles = True
     )
 
-    ui_x = np.sqrt(ui[:, 0]**2 + 2 * q_e / m_i * initial_pos * E0)
+    ui_x = ion_velocity_func(initial_pos_i)
 
     ion_wrapper.add_particles(
         x = x, y = y, z = z,
@@ -241,7 +267,7 @@ def initialize_particles():
         uy = ui[:, 1] + bulk_u_i[1].get(),
         uz = ui[:, 2] + bulk_u_i[2].get(),
         w = weight,
-        x_pos = initial_pos,
+        x_pos = initial_pos_i,
         unique_particles = True
     )
 
