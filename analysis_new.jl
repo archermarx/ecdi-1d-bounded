@@ -227,7 +227,7 @@ function phase_space_density!(density, xs, vs, data, iter, index)
             (chunk_inds,) = parentindices(chunk)
             for linear_ind in chunk_inds
                 i, j = Tuple(indices[linear_ind])
-                density[linear_ind] = AverageShiftedHistograms.pdf(hist, xs[i], vs[j])
+                density[linear_ind] = AverageShiftedHistograms.pdf(hist, xs[i] / 1000, vs[j] * 1000)
             end
         end
     end
@@ -242,6 +242,11 @@ end
 
 using GLMakie
 GLMakie.activate!()
+
+function plot_phase_space(dir, species, index; kwargs...)
+    data = load_all_data(dir)
+    plot_phase_space(data, dir, species, index; kwargs...)
+end
 
 function plot_phase_space(data, dir, species, index; time = false)
 
@@ -262,24 +267,38 @@ function plot_phase_space(data, dir, species, index; time = false)
 
     f = Figure()
 
-    ax = Axis(f[1,1])
+    ax = Axis(f[1,1];
+        xgridcolor = :white,
+        ygridcolor = :white,
+        xgridwidth = 1,
+        ygridwidth = 1,
+        xlabel = "Position (mm)",
+        ylabel = "Velocity (km/s)",
+    )
 
     @timeit timer "setup" begin
-        vmin, vmax = extrema(@views species_data.velocity[:, index, :])
-        xmin, xmax = extrema(@views species_data.position[:, index, :])
+        vmin, vmax = extrema(@views species_data.velocity[:, index, :]) ./ 1000
+        xmin, xmax = extrema(@views species_data.position[:, index, :]) .* 1000
 
+        # Set up for nice axis bounds
+        diff_v = vmax - vmin
+        increment = exp10(floor(Int, log10(diff_v))) / 5
+        vmin = increment * floor(vmin / increment)
+        vmax = increment * ceil(vmax / increment)
+
+        # Image resolution and pixel coordinates
         resolution = (1920, 1080) .÷ 4
-
         xs = LinRange(xmin, xmax, resolution[1])
         vs = LinRange(vmin, vmax, resolution[2])
-
         xlims!(ax, xs[1], xs[end])
         ylims!(ax, vs[1], vs[end])
 
+        # Allocate and compute initial phase space density array
         density = zeros(resolution[1], resolution[2])
         phase_space_density!(density, xs, vs, species_data, 1, index)
 
-        im = image!(ax, (xs[1], xs[end]), (vs[1], vs[end]), density, colormap = :turbo)
+        im = image!(ax, (xs[1], xs[end]), (vs[1], vs[end]), density, colormap = :turbo,)
+        translate!(im, 0, 0, -100)
 
         framerate = 15
         niters = size(species_data.position, 3)
