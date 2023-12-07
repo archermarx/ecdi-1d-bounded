@@ -2,7 +2,7 @@ import argparse
 import sys
 
 ####################################################################
-#                     COMMAND LINE ARGUMENTS                       #                  
+#                     COMMAND LINE ARGUMENTS                       #
 ####################################################################
 
 parser = argparse.ArgumentParser()
@@ -30,7 +30,7 @@ supercycling_interval = 11
 
 print(diag_name)
 ####################################################################
-#                            IMPORTS                               #                  
+#                            IMPORTS                               #
 ####################################################################
 
 import numpy as np
@@ -52,7 +52,7 @@ q_e = picmi.constants.q_e
 ep0 = picmi.constants.ep0
 
 ####################################################################
-#                     CONFIGURABLE OPTIONS                         #                  
+#                     CONFIGURABLE OPTIONS                         #
 ####################################################################
 
 verbose = False            # Whether to use verbose output
@@ -78,7 +78,7 @@ T_i = 0.1           # Ion temperature (eV)
 u_i = 0.0         # Axial ion velocity (m/s)
 
 ####################################################################
-#                        DERIVED VALUES                            #                  
+#                        DERIVED VALUES                            #
 ####################################################################
 
 m_i = elements.symbol(species).mass * m_p       # Ion mass
@@ -93,12 +93,12 @@ dx = L / num_cells                              # Cell width
 
 max_grid_size = ceil(num_cells/num_grids/2) * 2 # Maximum size of decomposed grids
 
-max_steps = ceil(max_time / dt)                 # Maximum simulation steps 
+max_steps = ceil(max_time / dt)                 # Maximum simulation steps
 diag_inter_time = max_time / num_diags          # Interval between diagnostic outputs (s)
 diag_inter_iter = round(diag_inter_time / dt)   # Interval between diagnostic outputs (iters)
 
 ####################################################################
-#                       SIMULATION SETUP                           #                  
+#                       SIMULATION SETUP                           #
 ####################################################################
 
 # Grid
@@ -209,7 +209,7 @@ sim.add_diagnostic(particle_diag)
 sim.initialize_inputs()
 
 ####################################################################
-#                           CALLBACKS                              #                  
+#                           CALLBACKS                              #
 ####################################################################
 
 def initialize_particles():
@@ -234,7 +234,7 @@ def initialize_particles():
     )
 
     ui_x = np.sqrt(ui[:, 0]**2 + 2 * q_e / m_i * initial_pos * E0)
-    
+
     ion_wrapper.add_particles(
         x = x, y = y, z = z,
         ux = ui_x,
@@ -244,7 +244,7 @@ def initialize_particles():
         x_pos = initial_pos,
         unique_particles = True
     )
-    
+
 callbacks.installafterinit(initialize_particles)
 
 sim.initialize_warpx()
@@ -265,13 +265,13 @@ def _adjust_velocity(wrapper, bulk_u, v_rms, L_axial, dt):
     uxs = wrapper.get_particle_arrays('ux', 0)
     uys = wrapper.get_particle_arrays('uy', 0)
     uzs = wrapper.get_particle_arrays('uz', 0)
-    
+
     # CUDA device parameters
     num_blocks = 512
     threads_per_block = 512
 
     # Iterate over grids
-    for (i, (x, ux, uy, uz)) in enumerate(zip(xs, uxs, uys, uzs)):        
+    for (i, (x, ux, uy, uz)) in enumerate(zip(xs, uxs, uys, uzs)):
         # Get number of particles
         N = x.size
 
@@ -294,6 +294,6 @@ def adjust_velocity():
 callbacks.installbeforestep(adjust_velocity)
 
 ####################################################################
-#                        RUN SIMULATION                            #                  
+#                        RUN SIMULATION                            #
 ####################################################################
 sim.step(max_steps)
