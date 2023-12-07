@@ -18,7 +18,7 @@ void _wrap_particles(
         x[i] = fma(ux[i], dt, x[i]);
         bool right = x[i] >= L_axial;
         bool left  = x[i] < 0;
-        int sign = left ? -1 : 1;
+        float sign = left ? -1.0 : 1.0;
         if (x[i] >= L_axial || x[i] < 0) {
             x[i] = fwrap<T>(x[i], L_axial);
             ux[i] = fma(v_rms, sign * abs(rand_vx[i]), bulk_u[0]);
