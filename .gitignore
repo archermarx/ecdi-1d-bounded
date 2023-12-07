@@ -1,6 +1,8 @@
 diags
+analysis
 openpmd*
 Backtrace*
 warpx_used_inputs
 *.gif
 *.png
+*.mp4
