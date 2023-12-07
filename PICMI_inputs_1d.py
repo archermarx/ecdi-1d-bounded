@@ -67,7 +67,7 @@ seed = 11235813             # Random seed
 #L = 26.7e-3         # Simulation domain length (m)
 L = 5e-3
 L_axial = 1e-2     # Virtual axial length
-max_time = 2e-6    # Max time (s)
+max_time = 10e-6    # Max time (s)
 num_diags = 500     # Number of diagnostic outputs
 #n0 = 1e17           # Plasma density
 B0 = 2e-2           # Magnetic field strength (T)
@@ -211,15 +211,7 @@ sim.initialize_inputs()
 ####################################################################
 #                           CALLBACKS                              #
 ####################################################################
-ion_flux = u_i
-ion_velocity_func = lambda x: np.sqrt(u_i**2 + 2 * q_e / m_i * E0 * x)
-ion_density_func = lambda x: ion_flux / ion_velocity_func(x)
-
-electron_velocity_func = lambda x: np.sqrt(u_i**2 + 2 * q_e / m_i * E0 * (L_axial - x))
-electron_density_func = lambda x: ion_flux / electron_velocity_func(x)
-
 def sample_density_func(f, N):
-
     samples = np.zeros(N)
 
     for i in range(N):
@@ -236,6 +228,12 @@ def sample_density_func(f, N):
     return samples
 
 def initialize_particles():
+    ion_flux = u_i
+    ion_velocity_func = lambda x: np.sqrt(u_i**2 + 2 * q_e / m_i * E0 * x)
+    ion_density_func = lambda x: ion_flux / ion_velocity_func(x)
+
+    electron_velocity_func = lambda x: np.sqrt(u_i**2 + 2 * q_e / m_e * E0 * (L_axial - x))
+    electron_density_func = lambda x: ion_flux / electron_velocity_func(x)
 
     elec_wrapper = particle_containers.ParticleContainerWrapper('electrons')
     elec_wrapper.add_real_comp('x_pos')
@@ -258,9 +256,7 @@ def initialize_particles():
         x_pos = initial_pos_e,
         unique_particles = True
     )
-
     ui_x = ion_velocity_func(initial_pos_i)
-
     ion_wrapper.add_particles(
         x = x, y = y, z = z,
         ux = ui_x,
