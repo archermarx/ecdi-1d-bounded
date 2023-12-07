@@ -5,6 +5,7 @@ using DataFrames
 using FileIO
 using HDF5
 using PartialFunctions
+using Printf
 import PhysicalConstants.CODATA2018 as constants
 using Serialization
 using Statistics
@@ -212,7 +213,11 @@ function phase_space_density!(density, xs, vs, data, iter, index)
     # get data at iteration, and compute histogram
     x = @views data.position[:, index, iter]
     v = @views data.velocity[:, index, iter]
-    hist = ash(x, v)
+
+    smoothing_factor = 1.25
+    mx = round(Int, 5 * smoothing_factor)
+    my = round(Int, 5 * smoothing_factor)
+    hist = ash(x, v; mx, my)
 
     # partition density array into chunks
     nchunks = length(density) ÷ Threads.nthreads()
@@ -248,7 +253,7 @@ function plot_phase_space(dir, species, index; kwargs...)
     plot_phase_space(data, dir, species, index; kwargs...)
 end
 
-function plot_phase_space(data, dir, species, index; time = false)
+function plot_phase_space(data, dir, species, index; time = false, interval = 1, framerate = 15, colormap = :turbo)
 
     analysis_dir = mkpath(joinpath(ANALYSIS_DIR, dir))
 
@@ -261,30 +266,46 @@ function plot_phase_space(data, dir, species, index; time = false)
 
     if (species == "e") || (species == "electrons")
         species_data = data.particles.electrons
+        species_str = "Electron"
     else
         species_data = data.particles.ions
+        species_str = "Ion"
     end
 
-    f = Figure()
-
-    ax = Axis(f[1,1];
-        xgridcolor = :white,
-        ygridcolor = :white,
-        xgridwidth = 1,
-        ygridwidth = 1,
-        xlabel = "Position (mm)",
-        ylabel = "Velocity (km/s)",
-    )
-
     @timeit timer "setup" begin
+        # Get phase space extents
         vmin, vmax = extrema(@views species_data.velocity[:, index, :]) ./ 1000
         xmin, xmax = extrema(@views species_data.position[:, index, :]) .* 1000
 
-        # Set up for nice axis bounds
+        # Set up for nice axis bounds (v)
         diff_v = vmax - vmin
         increment = exp10(floor(Int, log10(diff_v))) / 5
         vmin = increment * floor(vmin / increment)
         vmax = increment * ceil(vmax / increment)
+
+        # Set up for nice axis bounds (x)
+        diff_x = xmax - xmin
+        increment = exp10(floor(Int, log10(diff_x))) / 5
+        xmin = increment * floor(xmin / increment)
+        xmax = increment * ceil(xmax / increment)
+
+        # Set up title title string
+        title_string(time, iter) = @sprintf("%s phase space (%s)\niteration %d, time = %.2f μs", species_str, dim, iter, time * 1e6)
+        titlestr = Observable(title_string(data.time[1], data.iter[1]))
+
+        # Set up plots
+        f = Figure(; fontsize = 16)
+
+        ax = Axis(f[1,1];
+            xgridcolor = :white,
+            ygridcolor = :white,
+            xgridwidth = 1,
+            ygridwidth = 1,
+            xlabel = dim * " (mm)",
+            ylabel = "Velocity (km/s)",
+            title = titlestr,
+            xticks = WilkinsonTicks(7),
+        )
 
         # Image resolution and pixel coordinates
         resolution = (1920, 1080) .÷ 4
@@ -297,18 +318,17 @@ function plot_phase_space(data, dir, species, index; time = false)
         density = zeros(resolution[1], resolution[2])
         phase_space_density!(density, xs, vs, species_data, 1, index)
 
-        im = image!(ax, (xs[1], xs[end]), (vs[1], vs[end]), density, colormap = :turbo,)
+        im = image!(ax, (xs[1], xs[end]), (vs[1], vs[end]), density; colormap)
         translate!(im, 0, 0, -100)
-
-        framerate = 15
         niters = size(species_data.position, 3)
 
     end
 
-    record(f, anim_filename, 1:niters; framerate) do i
+    record(f, anim_filename, 1:interval:niters; framerate) do i
         @timeit timer "frame" begin
             @timeit timer "update" phase_space_density!(density, xs, vs, species_data, i, index)
             @timeit timer "render" im[3] = density
+            ax.title = title_string(data.time[i], data.iter[i])
         end
     end
 
@@ -317,4 +337,11 @@ function plot_phase_space(data, dir, species, index; time = false)
     end
 
     return nothing
+end
+
+function make_phase_space_plots(dir; kwargs...)
+    plot_phase_space(dir, "electrons", 1; kwargs...)
+    plot_phase_space(dir, "electrons", 3; kwargs...)
+    plot_phase_space(dir, "ions", 1; kwargs...)
+    plot_phase_space(dir, "ions", 3; kwargs...)
 end
