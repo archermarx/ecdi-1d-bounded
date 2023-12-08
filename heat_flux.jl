@@ -1,5 +1,4 @@
-using StatsBase
-using NumericalIntegration
+using ImageFiltering
 
 function heat_flux(vel, mass)
     # compute square of speed for all particles
@@ -89,26 +88,105 @@ function temperature_gradient(data, species, iter, index; plot = true, bin_facto
     return m, std_m, q
 end
 
-function all_temp_gradients(data, species, index; kwargs...)
+function all_temp_gradients(data, species = "electron"; kwargs...)
     N = length(data.iter)
 
-    results = [temperature_gradient(data, species, i, index; plot = false, kwargs...) for i in 1:N]
-    ∇T = [res[1] for res in results] ./ 1000
-    σ = [res[2] for res in results] ./ 1000
-    q = [res[3] for res in results] ./ 1e6
-    lower = @. ∇T - 3 * σ
-    upper = @. ∇T + 2 * σ
+    tmin, tmax = round_bounds(data.time[1], data.time[end-1]) .* 1e6
 
+    results_x = [temperature_gradient(data, species, i, 1; plot = false, kwargs...) for i in 1:N]
+    ∇T_x = [res[1] for res in results_x] ./ 1000
+    σ_x = [res[2] for res in results_x] ./ 1000
+    q = [res[3] for res in results_x] ./ 1e6
+    lower_x = @. ∇T_x - 3 * σ_x
+    upper_x = @. ∇T_x + 2 * σ_x
+
+    results_y = [temperature_gradient(data, species, i, 3; plot = false, kwargs...) for i in 1:N]
+    ∇T_y = [res[1] for res in results_y] ./ 1000
+    σ_y = [res[2] for res in results_y] ./ 1000
+    lower_y = @. ∇T_y - 3 * σ_y
+    upper_y = @. ∇T_y + 2 * σ_y
+
+
+    ker = ImageFiltering.Kernel.gaussian((5,))
+    q_filtered = imfilter(q, ker)
     colors = Makie.wong_colors()
 
     t_μs = data.time * 1e6
-    fig, ax, b = band(t_μs, lower, upper; color = (colors[1], 0.2))
-    lines!(ax, t_μs, ∇T; color = colors[1])
-    lines!(ax, t_μs, q; color = colors[2])
-    ax.xlabel = "Time (μs)"
-    ax.ylabel = "Electron temperature gradient (eV / mm)"
 
-    fig
+    sp_name = titlecase(species)[1:end-1]
+    sp_letter = species[1]
+
+    f = Figure(;
+
+    )
+
+    fontsize = 17
+
+    vmin, vmax = round_bounds(extrema(q)...)
+    ax_q = Axis(
+        f[1,1],
+        yticklabelcolor = colors[2],
+        ylabelcolor = colors[2],
+        ylabel = L"%$(sp_name) heat flux (eV mm$^{-2}$ s$^{-1}$)",
+        yaxisposition = :right,
+        ylabelrotation = -pi/2,
+        ylabelsize = fontsize
+    )
+    ax_∇ = Axis(
+        f[1,1],
+        yticklabelcolor = colors[1],
+        ylabelcolor = colors[1],
+        ylabel = L"%$(sp_name) temperature gradient (eV mm$^{-1}$)",
+        ylabelsize = fontsize
+    )
+    l_q = lines!(ax_q, t_μs, q; color = (colors[2], 0.5))
+    l_f = lines!(ax_q, t_μs, q_filtered; color = colors[2], linewidth = 2)
+
+    b_x = band!(ax_∇, t_μs, lower_x, upper_x; color = (colors[1], 0.2))
+    l_grad_x = lines!(ax_∇, t_μs, ∇T_x; color = colors[1])
+
+    b_y = band!(ax_∇, t_μs, lower_y, upper_y; color = (colors[3], 0.2))
+    l_grad_y = lines!(ax_∇, t_μs, ∇T_y; color = colors[3])
+
+    ax_∇.xlabel = L"Time ($μ$s)"
+    ax_∇.xlabelsize = fontsize
+    xlims!(ax_q, tmin, tmax)
+    xlims!(ax_∇, tmin, tmax)
+    ylims!(ax_q, vmin, vmax)
+    ylims!(ax_∇, vmin, vmax)
+    hidespines!(ax_q)
+    hidexdecorations!(ax_q)
+
+    Legend(
+        f[0, 1],
+        [
+            [l_grad_x, b_x],
+            [l_grad_y, b_y],
+            l_q, l_f
+        ],
+        [
+            L"$\nabla T_{%$(sp_letter), x}$ ($\pm 3\sigma$)",
+            L"$\nabla T_{%$(sp_letter), y}$ ($\pm 3\sigma$)",
+            L"$-q_{%$(sp_letter),x}$ (raw)",
+            L"$-q_{%$(sp_letter),x}$ (filtered)",
+        ];
+        orientation = :horizontal, patchsize = (20, 10),
+        labelsize = 17, tellwidth = false
+    )
+
+    save(joinpath(data.dir, "heat_flux.png"), f, px_per_unit = 5)
+    firstind = findfirst(>=(1), t_μs)
+
+    ts = t_μs[firstind:end]
+    N = length(ts)
+    κs_x = q ./ ∇T_x
+    κs_y = q ./ ∇T_y
+    σx = std(κs_x) / sqrt(N)
+    σy = std(κs_x) / sqrt(N)
+    κx = mean(κs_x[firstind:end])
+    κy = mean(κs_y[firstind:end])
+
+    return κx, κy, σx, σy
 end
 
 function fit_line(x, y)
@@ -126,4 +204,60 @@ function fit_line(x, y)
 
     std_pred = sqrt(var_pred)
     return m, b, std_pred, std_m, std_b
+end
+
+n, κx, κy, σx, σy =  let
+dirs = readdir("diags")
+N = length(dirs)
+κx = zeros(N)
+κy = zeros(N)
+σx = zeros(N)
+σy = zeros(N)
+n = zeros(N)
+for (i, dir) in enumerate(dirs)
+    @show dir
+    data = load_all_data(dir)
+
+    n[i] = data.particles.electrons.density
+    #make_phase_space_plots(dir, interval = 2)
+    κx[i], κy[i], σx[i], σy[i] = all_temp_gradients(data, "electrons")
+end
+n, κx, κy, σx, σy
+end
+
+let
+    perm = sortperm(n)
+    n_sorted = n[perm]
+    kx_sorted = κx[perm]
+    ky_sorted = κy[perm]
+    sx_sorted = σx[perm]
+    sy_sorted = σy[perm]
+    lower_x = @. kx_sorted - 3 * sx_sorted
+    upper_x = @. kx_sorted + 3 * sx_sorted
+    lower_y = @. ky_sorted - 3 * sy_sorted
+    upper_y = @. ky_sorted + 3 * sy_sorted
+
+    colors = Makie.wong_colors()
+
+    xticks = [1e16, 1e17, 1e18], [L"$10^{16}$", L"$10^{17}$", L"$10^{18}"]
+    xlims = (1e16, 1e18)
+    f = Figure()
+    ax = Axis(
+        f[1,1];
+        xlabel = L"Number density (m$^{-3}$)", xticks,
+        xlabelsize = 17,
+        xticksize = 17,
+        xminorgridvisible = true,
+        xminorticks = IntervalsBetween(9),
+        ylabel = L"Electron thermal conductivity ($k_B$ W/mm K)", xscale =  log10,
+
+    )
+    xlims!(ax, xlims)
+    b_x = band!(ax, n_sorted, lower_x, upper_x, color = (colors[1], 0.2))
+    l_x = scatterlines!(ax, n_sorted, kx_sorted, color = colors[1])
+    b_x = band!(ax, n_sorted, lower_y, upper_y, color = (colors[2], 0.2))
+    l_y = scatterlines!(ax, n_sorted, ky_sorted, color = colors[2])
+    Legend(f[0, 1], [l_x, l_y], ["x-conductivity", "y-conductivity"], orientation = :horizontal)
+    f
+    save(joinpath(ANALYSIS_DIR, "conductivity.png"), f)
 end

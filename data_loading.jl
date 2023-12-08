@@ -93,8 +93,10 @@ function get_data(path, timer)
         ions = get_particle_properties(particles["ions"], L, timer)
     end
 
+    dir = abspath(joinpath(ANALYSIS_DIR, splitpath(path)[end-1]))
+
     raw_data = (;
-        time, iter, fields = field_data, particles = (;electrons, ions)
+        dir, time, iter, fields = field_data, particles = (;electrons, ions)
     )
 
     close(fid)
@@ -139,6 +141,7 @@ function condense_data!(data)
 
     return (;
         Nx, Ne, Ni,
+        dir = data[1].dir,
         time, iter,
         fields = (;
             z = data[1].fields.z,
