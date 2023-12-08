@@ -1,4 +1,5 @@
 using AverageShiftedHistograms
+using GLMakie
 using CairoMakie
 using CSV
 using DataFrames
@@ -245,8 +246,14 @@ function phase_space_density!(density, xs, vs, data, iter, index)
     return density
 end
 
-using GLMakie
-GLMakie.activate!()
+function round_bounds(a, b; to = 5)
+    divisor = 10 / to
+    diff_x = b - a
+    increment = exp10(floor(Int, log10(diff_x))) / divisor
+    c = increment * floor(a / increment)
+    d = increment * ceil(b / increment)
+    return c, d
+end
 
 function plot_phase_space(dir, species, index; kwargs...)
     data = load_all_data(dir)
@@ -254,6 +261,8 @@ function plot_phase_space(dir, species, index; kwargs...)
 end
 
 function plot_phase_space(data, dir, species, index; time = false, interval = 1, framerate = 15, colormap = :turbo)
+
+    GLMakie.activate!()
 
     analysis_dir = mkpath(joinpath(ANALYSIS_DIR, dir))
 
@@ -278,16 +287,10 @@ function plot_phase_space(data, dir, species, index; time = false, interval = 1,
         xmin, xmax = extrema(@views species_data.position[:, index, :]) .* 1000
 
         # Set up for nice axis bounds (v)
-        diff_v = vmax - vmin
-        increment = exp10(floor(Int, log10(diff_v))) / 5
-        vmin = increment * floor(vmin / increment)
-        vmax = increment * ceil(vmax / increment)
+        vmin, vmax = round_bounds(vmin, vmax, to = 2)
 
         # Set up for nice axis bounds (x)
-        diff_x = xmax - xmin
-        increment = exp10(floor(Int, log10(diff_x))) / 5
-        xmin = increment * floor(xmin / increment)
-        xmax = increment * ceil(xmax / increment)
+        xmin, xmax = round_bounds(xmin, xmax, to = 2)
 
         # Set up title title string
         title_string(time, iter) = @sprintf("%s phase space (%s)\niteration %d, time = %.2f μs", species_str, dim, iter, time * 1e6)
