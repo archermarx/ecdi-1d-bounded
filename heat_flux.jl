@@ -222,7 +222,7 @@ for (i, dir) in enumerate(dirs)
     #make_phase_space_plots(dir, interval = 2)
     κx[i], κy[i], σx[i], σy[i] = all_temp_gradients(data, "electrons")
 end
-n, κx, κy, σx, σy
+n[2:end], κx[2:end], κy[2:end], σx[2:end], σy[2:end]
 end
 
 let
@@ -237,10 +237,17 @@ let
     lower_y = @. ky_sorted - 3 * sy_sorted
     upper_y = @. ky_sorted + 3 * sy_sorted
 
+    ns = exp10.(LinRange(16, 18, 100))
+    linear = @. ns / ns[1] /10
+    sqrtln = @. sqrt(ns / ns[1]) /10
+    logln =  @. log10(ns) / log10(ns)[1] / 10
+    square = @. (ns/ns[1])^2 / 10
+
     colors = Makie.wong_colors()
 
     xticks = [1e16, 1e17, 1e18], [L"$10^{16}$", L"$10^{17}$", L"$10^{18}"]
-    xlims = (1e16, 1e18)
+    xlims = (8e15, 1.3e18)
+    ylims = (0.08, 10)
     f = Figure()
     ax = Axis(
         f[1,1];
@@ -250,14 +257,20 @@ let
         xminorgridvisible = true,
         xminorticks = IntervalsBetween(9),
         ylabel = L"Electron thermal conductivity ($k_B$ W/mm K)", xscale =  log10,
-
+        yscale = log10
     )
     xlims!(ax, xlims)
-    b_x = band!(ax, n_sorted, lower_x, upper_x, color = (colors[1], 0.2))
-    l_x = scatterlines!(ax, n_sorted, kx_sorted, color = colors[1])
-    b_x = band!(ax, n_sorted, lower_y, upper_y, color = (colors[2], 0.2))
+    ylims!(ax, ylims)
+    #b_x = band!(ax, n_sorted, kx_sorted, upper_x, color = (colors[1], 0.2))
+    #l_x = scatterlines!(ax, n_sorted, kx_sorted, color = colors[1])
+    #b_x = band!(ax, n_sorted, ky_sorted, upper_y, color = (colors[2], 0.2))
     l_y = scatterlines!(ax, n_sorted, ky_sorted, color = colors[2])
-    Legend(f[0, 1], [l_x, l_y], ["x-conductivity", "y-conductivity"], orientation = :horizontal)
-    f
+
+    l_square = lines!(ax, ns, square, color = :black, linestyle = :dash)
+    l_linear = lines!(ax, ns, linear, color = :black, linestyle = :dash)
+    l_log = lines!(ax, ns, logln, color = :black, linestyle = :dash)
+    l_sqrt = lines!(ax, ns, sqrtln, color = :black, linestyle = :dash)
+    #Legend(f[0, 1], [l_x, l_y], ["x-conductivity", "y-conductivity"], orientation = :horizontal)
     save(joinpath(ANALYSIS_DIR, "conductivity.png"), f)
+    f
 end
