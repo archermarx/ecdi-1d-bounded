@@ -24,7 +24,8 @@ if (quiet_start):
 else:
     diag_name = "noisy"
 
-diag_name += f"_{prefix}_{n0}_{particles_per_cell}_{num_cells}"
+#diag_name += f"_{prefix}_{n0}_{particles_per_cell}_{num_cells}"
+diag_name = "no_e_field"
 
 supercycling_interval = 11
 
@@ -59,32 +60,37 @@ verbose = False            # Whether to use verbose output
 num_grids = 1              # Number of subgrids to decompose domain into
 debye_factor = 1.5            # Grid cells per debye length
 dt_factor = 3.0             # Timestep factor. dt = dt_factor * dx / v_ExB
-particles_per_cell = 200    # Number of particles per cell
+#particles_per_cell = 200    # Number of particles per cell
 #dt = 2e-12
 dt = 5e-12
 seed = 11235813             # Random seed
+collision_interval = round(1e-8/dt)      # how many steps elapse between applications of collisions
 
 #L = 26.7e-3         # Simulation domain length (m)
 L = 5e-3
-L_axial = 1e-2     # Virtual axial length
+L_axial = 10e-3     # Virtual axial length
 max_time = 10e-6    # Max time (s)
-num_diags = 500     # Number of diagnostic outputs
+num_diags = 50     # Number of diagnostic outputs
 #n0 = 1e17           # Plasma density
-B0 = 2e-2           # Magnetic field strength (T)
-E0 = 20e3           # Electric field strength (V/m)
+B0 = 2e-1           # Magnetic field strength (T)
+E0 = 1e3           # Electric field strength (V/m)
 species = "Xe"      # Ion species
 T_e = 2.0          # Electron temperature (eV)
 T_i = 0.1           # Ion temperature (eV)
 u_i = 3000.0         # Axial ion velocity (m/s)
 u_e = -u_i
 
+Te_left = 10 * T_e
+Te_right = T_e
+Ti_left = T_i
+Ti_right = T_i
 ####################################################################
 #                        DERIVED VALUES                            #
 ####################################################################
 m_i = elements.symbol(species).mass * m_p       # Ion mass
 v_ExB = E0 / B0                                 # E x B drift speed
-ve_rms = sqrt(q_e * T_e / m_e)                  # Electron rms speed
-vi_rms = sqrt(q_e * T_i / m_i)                  # Ion rms speed
+ve_rms = sqrt(q_e / m_e)                  # Electron rms speed at 1 eV
+vi_rms = sqrt(q_e / m_i)                  # Ion rms speed at 1 eV
 lambda_d = sqrt(ep0 * T_e / n0 / q_e)           # Electron debye length
 
 #num_cells = ceil(L / lambda_d) * debye_factor   # Number of computational cells
@@ -96,6 +102,40 @@ max_grid_size = ceil(num_cells/num_grids/2) * 2 # Maximum size of decomposed gri
 max_steps = ceil(max_time / dt)                 # Maximum simulation steps
 diag_inter_time = max_time / num_diags          # Interval between diagnostic outputs (s)
 diag_inter_iter = round(diag_inter_time / dt)   # Interval between diagnostic outputs (iters)
+
+
+#=====================================
+#               Species
+#=====================================
+electrons = picmi.Species(
+    particle_type = 'electron', name = 'electrons',
+)
+
+ions = picmi.Species(
+    particle_type = species, name = 'ions', mass = m_i, charge = 'q_e',
+    warpx_do_supercycling = True, warpx_supercycling_interval = supercycling_interval
+)
+
+#=====================================
+#              Collisions
+#=====================================
+collision_ei = picmi.CoulombCollisions(
+    name = 'collision_ei', 
+    species = [electrons, ions], 
+    ndt = collision_interval
+)
+
+collision_ee = picmi.CoulombCollisions(
+    name = 'collision_ee', 
+    species = [electrons, electrons], 
+    ndt = collision_interval
+)
+
+collision_ii = picmi.CoulombCollisions(
+    name = 'collision_ii', 
+    species = [ions, ions], 
+    ndt = collision_interval
+)
 
 ####################################################################
 #                       SIMULATION SETUP                           #
@@ -127,7 +167,8 @@ sim = picmi.Simulation(
     warpx_field_gathering_algo = 'energy-conserving',
     warpx_serialize_initial_conditions = True,
     warpx_random_seed = seed,
-    warpx_sort_intervals = 500
+    warpx_sort_intervals = 500,
+    warpx_collisions = [collision_ee, collision_ii, collision_ei]
 )
 solver.sim = sim
 
@@ -139,9 +180,9 @@ external_field = picmi.ConstantAppliedField(
 sim.add_applied_field(external_field)
 
 # Particles
-#particle_layout = picmi.GriddedLayout(n_macroparticle_per_cell = [particles_per_cell], grid = grid)
 particle_layout = picmi.GriddedLayout(n_macroparticle_per_cell = [0], grid = grid)
-
+sim.add_species(electrons, layout = particle_layout)
+sim.add_species(ions, layout = particle_layout)
 num_particles = round(num_cells * particles_per_cell)
 
 # Particle positions
@@ -158,8 +199,8 @@ cp.random.seed(seed)
 
 # mean and cov as numpy arrays
 mean = np.zeros(3)
-cov_i = vi_rms**2 * np.identity(3)
-cov_e = ve_rms**2 * np.identity(3)
+cov_i = T_i * vi_rms**2 * np.identity(3)
+cov_e = T_e * ve_rms**2 * np.identity(3)
 
 if quiet_start:
     qmc_engine = qmc.Halton(d = 3)
@@ -175,18 +216,9 @@ else:
 
 weight = L * n0 / num_particles * np.ones(num_particles)
 
-electrons = picmi.Species(
-    particle_type = 'electron', name = 'electrons',
-)
-sim.add_species(electrons, layout = particle_layout)
-
-ions = picmi.Species(
-    particle_type = species, name = 'ions', mass = m_i, charge = 'q_e',
-    warpx_do_supercycling = True, warpx_supercycling_interval = supercycling_interval
-)
-sim.add_species(ions, layout = particle_layout)
-
-# Diagnostics
+#============================================
+#               DIAGNOSTICS
+#============================================
 field_diag = picmi.FieldDiagnostic(
     name = diag_name,
     grid = grid,
@@ -211,6 +243,11 @@ sim.initialize_inputs()
 ####################################################################
 #                           CALLBACKS                              #
 ####################################################################
+left_multiplier_e = sqrt(Te_left)
+right_multiplier_e = sqrt(Te_right)
+left_multiplier_i = sqrt(Ti_left)
+right_multiplier_i = sqrt(Ti_right)
+
 def sample_density_func(f, N):
     samples = np.zeros(N)
 
@@ -242,14 +279,14 @@ def initialize_particles():
     ion_wrapper.add_real_comp('x_pos')
 
     # Particles start randomly-distributed in x
-    initial_pos_e = sample_density_func(electron_density_func, num_particles)
+    initial_pos_e = np.random.uniform(0.0, L_axial, size = num_particles)
     initial_pos_i = sample_density_func(ion_density_func, num_particles)
 
-    ue_x = electron_velocity_func(initial_pos_e)
+    #ue_x = -electron_velocity_func(initial_pos_e)
 
     elec_wrapper.add_particles(
         x = x, y = y, z = z,
-        ux = ue_x,
+        ux = ue[:, 0] + bulk_u_e[0].get(),
         uy = ue[:, 1] + bulk_u_e[1].get(),
         uz = ue[:, 2] + bulk_u_e[2].get(),
         w = weight,
@@ -282,7 +319,7 @@ mod = cp.RawModule(code = code, options = ('-std=c++20', ), name_expressions = n
 k_wrap_particles_float = mod.get_function(name_exp[0])
 k_wrap_particles_double = mod.get_function(name_exp[1])
 
-def _adjust_velocity(wrapper, bulk_u, v_rms, L_axial, dt):
+def _adjust_velocity(wrapper, bulk_u, v_rms, left_multiplier, right_multiplier, L_axial, dt):
     xs  = wrapper.get_particle_arrays('x_pos', 0)
     uxs = wrapper.get_particle_arrays('ux', 0)
     uys = wrapper.get_particle_arrays('uy', 0)
@@ -302,13 +339,15 @@ def _adjust_velocity(wrapper, bulk_u, v_rms, L_axial, dt):
 
         # Launch kernel to wrap particle positions and randomize velocities as necessary
         k_wrap_particles_double((num_blocks, ), (threads_per_block, ), (
-            N, x, ux, uy, uz, bulk_u, v_rms, rands[:, 0], rands[:, 1], rands[:, 2], L_axial, dt)
+            N, x, ux, uy, uz, bulk_u, v_rms, rands[:, 0], rands[:, 1], rands[:, 2], left_multiplier, right_multiplier, L_axial, dt)
         )
 
 def adjust_velocity():
     #t = time.time()
-    _adjust_velocity(elec_wrapper, bulk_u_e, ve_rms, L_axial, dt)
-    _adjust_velocity(ion_wrapper,  bulk_u_i, vi_rms, L_axial, dt)
+
+    #print(ve_rms, left_multiplier_e, right_multiplier_e)
+    _adjust_velocity(elec_wrapper, bulk_u_e, ve_rms, left_multiplier_e, right_multiplier_e, L_axial, dt)
+    _adjust_velocity(ion_wrapper,  bulk_u_i, vi_rms, left_multiplier_i, right_multiplier_i, L_axial, dt)
     #elapsed = time.time() - t
     #print("Elapsed time: ", elapsed, "s.")
 
